@@ -1,0 +1,78 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation template with a custom resource that accepts user input.
+
+Parameters:
+  WorkspaceName:
+    Type: String
+    Description: Enter the workspace name.
+
+Mappings:
+  LambdaEnvironmentVariables:
+    WorkspaceName: !Ref WorkspaceName
+
+Resources:
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AWSLambda_FullAccess
+
+  ProvisionCluster:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: deployWorkspace
+      Code:
+        ZipFile: |
+          import boto3
+          import json
+          import cfnresponse
+
+          def handler(event, context):
+              print('EVENT:[{}]'.format(event))
+
+              # Check the CloudFormation event type
+              event_type = event['RequestType']
+
+              # Check if it's a stack deletion event
+              if event_type == 'Delete':
+                  # Add your cleanup logic here, e.g., deleting resources or performing cleanup tasks.
+                  print('Handling stack deletion...')
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, {})
+
+              else:
+                  # This is not a stack deletion event, perform the regular logic
+                  lambda_client = boto3.client('lambda')
+                  test_event = '{{"name":"{}"}}'.format(event['ResourceProperties']['WorkspaceName'])
+                  lambda_client.invoke(
+                      FunctionName='target1',
+                      InvocationType='Event',
+                      Payload=test_event,
+                  )
+                  responseValue = 120
+                  responseData = {}
+                  responseData['Data'] = responseValue
+                  cfnresponse.send(event, context, cfnresponse.SUCCESS, responseData)
+
+      Handler: index.handler
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Runtime: python3.7
+      Timeout: 15
+    DeletionPolicy: Delete
+
+  InvokeClusterProvisioner:
+    Type: AWS::CloudFormation::CustomResource
+    DependsOn: LambdaFunction2
+    Properties:
+      ServiceToken: !GetAtt LambdaFunction2.Arn
+
+Outputs:
+  LambdaFunction2Arn:
+    Description: ARN of LambdaFunction2
+    Value: !GetAtt LambdaFunction2.Arn
